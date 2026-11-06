@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Suivi de projet — Mistral</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <h1>🎯 Suivi de projet</h1>
+      <div class="topbar">
+        <label>Projet :
+          <select id="projectSelect"></select>
+        </label>
+        <button id="newProjectBtn" type="button">✨ Nouveau projet</button>
+        <a id="exportLink" class="button-link" href="#" download>📄 Exporter (.md)</a>
+      </div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-track"><div id="progressBar"></div></div>
+      <div class="progress-row">
+        <span id="progressLabel" class="progress-label"></span>
+        <span id="nextDeadline" class="next-deadline"></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="col-main">
+      <div class="main-toolbar">
+        <span id="stats" class="stats"></span>
+        <label class="toggle"><input type="checkbox" id="hideDone" checked> Cacher les terminées</label>
+      </div>
+      <div id="taskGroups"></div>
+      <p id="emptyState" class="empty" hidden>
+        Aucun projet pour l'instant. Importe un document Word (gestion globale ou hebdomadaire)
+        dans le panneau de droite, ou crée un nouveau projet adapté à ton profil. ✨
+      </p>
+      <details id="historyDetails" class="history-details">
+        <summary>🕘 Historique du projet</summary>
+        <ul id="historyList" class="history"></ul>
+      </details>
+    </section>
+
+    <aside class="col-side">
+      <details class="panel" open>
+        <summary>📥 Importer un Word</summary>
+        <div class="panel-body">
+          <input type="file" id="docxFile" accept=".docx">
+          <select id="docxKind">
+            <option value="global">Document global</option>
+            <option value="hebdomadaire">Document hebdomadaire</option>
+          </select>
+          <input type="text" id="docxProject" placeholder="Nom du projet (si nouveau)">
+          <button id="importBtn" type="button">Importer et extraire les tâches</button>
+          <p id="importMsg" class="msg"></p>
+        </div>
+      </details>
+
+      <details class="panel" id="adviceDetails" open>
+        <summary>🤖 Conseils IA</summary>
+        <div class="panel-body">
+          <button id="adviceBtn" type="button">Analyser les retards et conseiller</button>
+          <div id="advicePanel" class="advice" hidden>
+            <p id="adviceResume" class="advice-resume"></p>
+            <ul id="adviceList"></ul>
+            <div id="decalagesBox" hidden>
+              <h3>Décalages proposés</h3>
+              <ul id="decalagesList"></ul>
+              <button id="applyBtn" type="button">✅ Appliquer ces décalages</button>
+            </div>
+          </div>
+          <p id="adviceMsg" class="msg"></p>
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>🧠 Profil (ce que l'IA sait de toi)</summary>
+        <div class="panel-body">
+          <textarea id="profileNotes" rows="4" placeholder="Ex : je travaille plutôt le matin, semaine lundi–vendredi, mardi = réunions, je sous-estime les délais, je veux une revue chaque vendredi…"></textarea>
+          <label class="inline-label">Rythme (paceFactor, 1 = normal) :
+            <input type="number" id="paceFactor" min="0.5" max="3" step="0.1">
+          </label>
+          <fieldset class="surprises">
+            <legend>🎁 Tes goûts pour les surprises</legend>
+            <label><input type="checkbox" class="surprise-type" value="fun"> 😂 Blagues</label>
+            <label><input type="checkbox" class="surprise-type" value="citations"> 💪 Citations motivantes</label>
+            <label><input type="checkbox" class="surprise-type" value="festif"> 🎉 Festif (émojis)</label>
+            <label><input type="checkbox" class="surprise-type" value="pause"> ☕ Pause bien-être</label>
+            <label><input type="checkbox" class="surprise-type" value="defi"> 🎯 Mini-défi</label>
+            <select id="surpriseFreq">
+              <option value="souvent">À chaque jalon</option>
+              <option value="parfois">Parfois (aléatoire)</option>
+              <option value="rarement">Rarement</option>
+            </select>
+          </fieldset>
+          <button id="saveProfileBtn" type="button">Enregistrer le profil</button>
+          <p id="profileMsg" class="msg"></p>
+        </div>
+      </details>
+
+      <section class="panel chat-panel">
+        <h2>💬 Chat (mistral-small-latest)</h2>
+        <div id="chatMessages" class="chat"></div>
+        <form id="chatForm">
+          <input id="chatInput" placeholder="Pose une question sur le projet…" autocomplete="off" required>
+          <button type="submit">Envoyer</button>
+        </form>
+      </section>
+      <details class="panel" open>
+        <summary>⏱️ Timer focus</summary>
+        <div class="panel-body">
+          <div class="timer-top">
+            <select id="timerMode">
+              <option value="focus">🎯 Focus</option>
+              <option value="pause">☕ Pause</option>
+            </select>
+            <select id="timerDuration">
+              <option value="5">5 min</option>
+              <option value="15">15 min</option>
+              <option value="25" selected>25 min</option>
+              <option value="45">45 min</option>
+              <option value="60">60 min</option>
+            </select>
+          </div>
+          <div class="timer-ring-wrap">
+            <svg viewBox="0 0 120 120" class="timer-svg" aria-hidden="true">
+              <circle cx="60" cy="60" r="52" class="timer-track"></circle>
+              <circle id="timerRing" cx="60" cy="60" r="52" class="timer-ring"></circle>
+            </svg>
+            <div id="timerTime" class="timer-time">25:00</div>
+          </div>
+          <div class="timer-controls">
+            <button id="timerStart" type="button">▶️ Démarrer</button>
+            <button id="timerReset" type="button">↺ Reset</button>
+          </div>
+          <p class="msg" id="timerMsg"></p>
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>🫧 Fidget numérique</summary>
+        <div class="panel-body">
+          <div class="fidget-tabs">
+            <button type="button" class="fidget-tab active" data-fidget="bubbles">🫧 Bulles</button>
+            <button type="button" class="fidget-tab" data-fidget="palette">🎨 Palette</button>
+            <button type="button" class="fidget-tab" data-fidget="sand">⏳ Sablier</button>
+          </div>
+          <div id="fidgetBubbles">
+            <div id="bubbleGrid" class="bubble-grid"></div>
+            <div class="fidget-foot">
+              <span id="bubbleCount">🫧 0/32</span>
+              <button id="bubbleReset" type="button">↺ Recharger</button>
+            </div>
+          </div>
+          <div id="fidgetPalette" hidden>
+            <div id="paletteGrid" class="palette-grid"></div>
+          </div>
+          <div id="fidgetSand" hidden>
+            <canvas id="sandCanvas" width="300" height="250" title="Clique pour retourner le sablier"></canvas>
+            <div id="sandLegend" class="sand-legend"></div>
+            <div class="fidget-foot">
+              <span id="sandState">⏳ en cours…</span>
+              <button id="sandFlip" type="button">↺ Retourner</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </aside>
+  </main>
+
+  <div id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
