@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "type": "app",
+      "name": "suivi-projet",
+      "path": ".",
+      "routes": [{ "path": "/" }],
+      "port": 3000,
+      "serve": "server",
+      "runtime": "node",
+      "build": { "context": ".", "dockerfile": "Dockerfile", "target": "runtime" },
+      "deploy": { "startCommand": "node --import tsx server.ts" }
+    }
+  ]
+}

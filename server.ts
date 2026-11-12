@@ -19,7 +19,7 @@ import { computeView, isValidDate, ProjectView, slugify, SURPRISE_TYPES, Surpris
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(rootDir, 'public');
-const HOST = process.env.HOST ?? '127.0.0.1';
+const HOST = process.env.HOST ?? (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const PORT = Number(process.env.PORT ?? 3000);
 const MAX_BODY = 20 * 1024 * 1024;
 
