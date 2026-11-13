@@ -405,7 +405,7 @@ async function toggleFlag(taskId, done) {
     currentView = view;
     render();
     await loadProjects(currentSlug);
-    if (done) toastEvent(task?.flag ? 'jalon' : 'tache', { surprise: !!task?.flag });
+    if (done) { playDing(!!(task && task.flag)); toastEvent(task?.flag ? 'jalon' : 'tache', { surprise: !!task?.flag }); }
     else showToast(pick(TOASTS.reopen));
   } catch (e) {
     alert(e.message);
@@ -425,6 +425,7 @@ async function toggleSubtask(taskId, subId, done) {
     await loadProjects(currentSlug);
     const nowTask = view.tasks.find((t) => t.id === taskId);
     if (done) {
+      playDing(false);
       if (nowTask?.done && !wasDone) {
         showToast(`🏁 Tous les sous-jalons sont faits — jalon « ${nowTask.title} » validé automatiquement !\n${surpriseText()}`);
       } else {
@@ -667,6 +668,7 @@ function timerStop() {
 
 function timerFinish() {
   timerStop();
+  playFanfare();
   timerLeft = 0;
   renderTimer();
   const wasFocus = timerMode.value === 'focus';
@@ -715,6 +717,64 @@ timerMode.value = localStorage.getItem('timerMode') || 'focus';
 timerDuration.value = localStorage.getItem('timerDuration') || '25';
 timerRing.style.strokeDasharray = String(RING_LEN);
 timerSetTotal();
+
+/* ---- Sons (WebAudio, aucun fichier audio) ---- */
+let audioCtx = null;
+let soundOn = true;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, slideTo) {
+  if (!soundOn) return;
+  try {
+    const ctx = ensureAudio();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + dur);
+    g.gain.setValueAtTime(vol || 0.12, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + dur + 0.02);
+  } catch (e) {}
+}
+function playPop() { tone(500 + Math.random() * 500, 0.09, 'triangle', 0.18, 120); }
+function playClick() { tone(840, 0.05, 'square', 0.05); }
+function playDing(big) { tone(big ? 880 : 660, 0.12, 'sine', 0.12, big ? 1320 : 990); }
+function playFanfare() { tone(523, 0.12, 'sine', 0.12); setTimeout(function () { tone(659, 0.12, 'sine', 0.12); }, 120); setTimeout(function () { tone(784, 0.22, 'sine', 0.14); }, 240); }
+let sandNoise = null;
+function sandNoiseStart() {
+  if (!soundOn || sandNoise) return;
+  try {
+    const ctx = ensureAudio();
+    const len = ctx.sampleRate;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.4;
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700;
+    const g = ctx.createGain(); g.gain.value = 0.045;
+    src.connect(f); f.connect(g); g.connect(ctx.destination); src.start();
+    sandNoise = { src: src, g: g };
+  } catch (e) {}
+}
+function sandNoiseStop() {
+  if (!sandNoise) return;
+  try {
+    sandNoise.g.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+    sandNoise.src.stop(audioCtx.currentTime + 0.45);
+  } catch (e) {}
+  sandNoise = null;
+}
+const soundToggle = $('soundToggle');
+if (soundToggle) soundToggle.addEventListener('click', function () {
+  soundOn = !soundOn;
+  soundToggle.textContent = soundOn ? '🔊' : '🔇';
+  if (!soundOn) sandNoiseStop();
+});
 
 /* ================= 🫧 Fidget numérique ================= */
 const bubbleGrid = $('bubbleGrid');
@@ -769,6 +829,7 @@ function buildPalette() {
     t.style.background = randHue();
     t.addEventListener('click', () => {
       t.style.background = randHue();
+      playClick();
     });
     paletteGrid.appendChild(t);
   }
@@ -803,7 +864,7 @@ const BOT_Y = SH - 12;
 const CX = SW / 2;
 const NECK_HALF = 7;
 const WIDE_HALF = SW / 2 - 14;
-const GRAV = 0.35;
+const GRAV = 0.05;
 const COL_W = 3;
 
 function wallAt(y) {
@@ -868,7 +929,7 @@ function spawnParticles() {
 function stepSand() {
   let below = 0;
   for (const p of particles) {
-    p.vy = Math.min(p.vy + GRAV * p.g, 6);
+    p.vy = Math.min(p.vy + GRAV * p.g, 1.2);
     p.y += p.vy;
     p.x += p.vx + (p.jitter ? (Math.random() - 0.5) * p.jitter : 0);
     p.vx *= 0.99;
@@ -1012,13 +1073,14 @@ function sandLoop() {
     const t = Date.now() / 1000;
     const frac = stepSand();
     drawSand(t);
+    if (frac > 0.02 && frac <= 0.95 && !sandEmpty) sandNoiseStart(); else sandNoiseStop();
     if (!sandEmpty && frac > 0.95) {
       sandEmpty = true;
       sandState.textContent = '⏳ vide !';
       showToast('⏳ Le sablier est vide !\n' + surpriseText());
       setTimeout(flipSand, 1400);
     }
-  }
+  } else sandNoiseStop();
   requestAnimationFrame(sandLoop);
 }
 

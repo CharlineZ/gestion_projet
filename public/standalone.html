@@ -210,6 +210,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
           <button type="button" class="fidget-tab active" data-fidget="bubbles">🫧 Bulles</button>
           <button type="button" class="fidget-tab" data-fidget="palette">🎨 Palette</button>
           <button type="button" class="fidget-tab" data-fidget="sand">⏳ Sablier</button>
+          <button type="button" id="soundToggle" title="Sons on/off">🔊</button>
         </div>
         <div id="fidgetBubbles"><div id="bubbleGrid" class="bubble-grid"></div><div class="fidget-foot"><span id="bubbleCount">🫧 0/32</span><button id="bubbleReset" type="button">↺ Recharger</button></div></div>
         <div id="fidgetPalette" hidden><div id="paletteGrid" class="palette-grid"></div></div>
@@ -433,7 +434,7 @@ function toggleFlag(taskId, done) {
   const st = viewOf(p).tasks.find(function (x) { return x.id === taskId; });
   addHistory(p, done ? 'jalon validé' : 'jalon invalidé', t.title + (st && st.validatedLate ? ' (validé en retard)' : ''));
   saveState(state); render();
-  if (done) toastEvent(t.flag ? 'jalon' : 'tache', !!t.flag); else showToast(pick(TOASTS.reopen));
+  if (done) { playDing(t.flag); toastEvent(t.flag ? 'jalon' : 'tache', !!t.flag); } else showToast(pick(TOASTS.reopen));
 }
 
 function toggleSub(taskId, subId, done) {
@@ -450,6 +451,7 @@ function toggleSub(taskId, subId, done) {
   else if (!all && wasAll && wasDone) { t.done = false; t.doneAt = null; addHistory(p, 'jalon réouvert', t.title + ' (sous-jalon décoché)'); }
   saveState(state); render();
   if (done) {
+    playDing(false);
     if (t.done && !wasDone) showToast('🏁 Tous les sous-jalons sont faits — jalon « ' + t.title + ' » validé automatiquement !\n' + surpriseText());
     else showToast(pick(TOASTS.sous) + '\n' + surpriseText());
   } else if (wasDone && !t.done) showToast('↩️ Jalon « ' + t.title + ' » réouvert');
@@ -623,7 +625,7 @@ function renderTimer() {
 function timerSetTotal() { timerTotal = Number($('timerDuration').value) * 60; timerLeft = timerTotal; renderTimer(); }
 function timerStop() { timerRunning = false; clearInterval(timerTick); $('timerStart').textContent = '▶️ Démarrer'; }
 function timerFinish() {
-  timerStop(); timerLeft = 0; renderTimer();
+  timerStop(); playFanfare(); timerLeft = 0; renderTimer();
   const wasFocus = $('timerMode').value === 'focus';
   $('timerMode').value = wasFocus ? 'pause' : 'focus';
   $('timerDuration').value = wasFocus ? '5' : '25';
@@ -643,6 +645,64 @@ $('timerDuration').addEventListener('change', function () { if (!timerRunning) t
 $('timerRing').style.strokeDasharray = String(RING_LEN);
 timerSetTotal();
 
+/* ---- Sons (WebAudio, aucun fichier audio) ---- */
+let audioCtx = null;
+let soundOn = true;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, slideTo) {
+  if (!soundOn) return;
+  try {
+    const ctx = ensureAudio();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + dur);
+    g.gain.setValueAtTime(vol || 0.12, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + dur + 0.02);
+  } catch (e) {}
+}
+function playPop() { tone(500 + Math.random() * 500, 0.09, 'triangle', 0.18, 120); }
+function playClick() { tone(840, 0.05, 'square', 0.05); }
+function playDing(big) { tone(big ? 880 : 660, 0.12, 'sine', 0.12, big ? 1320 : 990); }
+function playFanfare() { tone(523, 0.12, 'sine', 0.12); setTimeout(function () { tone(659, 0.12, 'sine', 0.12); }, 120); setTimeout(function () { tone(784, 0.22, 'sine', 0.14); }, 240); }
+let sandNoise = null;
+function sandNoiseStart() {
+  if (!soundOn || sandNoise) return;
+  try {
+    const ctx = ensureAudio();
+    const len = ctx.sampleRate;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.4;
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700;
+    const g = ctx.createGain(); g.gain.value = 0.045;
+    src.connect(f); f.connect(g); g.connect(ctx.destination); src.start();
+    sandNoise = { src: src, g: g };
+  } catch (e) {}
+}
+function sandNoiseStop() {
+  if (!sandNoise) return;
+  try {
+    sandNoise.g.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+    sandNoise.src.stop(audioCtx.currentTime + 0.45);
+  } catch (e) {}
+  sandNoise = null;
+}
+const soundToggle = $('soundToggle');
+if (soundToggle) soundToggle.addEventListener('click', function () {
+  soundOn = !soundOn;
+  soundToggle.textContent = soundOn ? '🔊' : '🔇';
+  if (!soundOn) sandNoiseStop();
+});
+
 /* ================= Fidgets : bulles & palette ================= */
 const BUBBLE_COUNT = 32, TILE_COUNT = 24;
 let poppedCount = 0;
@@ -652,7 +712,7 @@ function buildBubbles() {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'bubble';
     b.addEventListener('click', function () {
       if (b.classList.contains('popped')) return;
-      b.classList.add('popped'); poppedCount++; $('bubbleCount').textContent = '🫧 ' + poppedCount + '/' + BUBBLE_COUNT;
+      b.classList.add('popped'); playPop(); poppedCount++; $('bubbleCount').textContent = '🫧 ' + poppedCount + '/' + BUBBLE_COUNT;
       if (poppedCount === BUBBLE_COUNT) { showToast('🫧✨ Toutes les bulles sont éclatées !\n' + surpriseText()); setTimeout(buildBubbles, 900); }
     });
     g.appendChild(b);
@@ -664,7 +724,7 @@ function buildPalette() {
   const g = $('paletteGrid'); g.innerHTML = '';
   for (let i = 0; i < TILE_COUNT; i++) {
     const t = document.createElement('button'); t.type = 'button'; t.className = 'tile'; t.style.background = randHue();
-    t.addEventListener('click', function () { t.style.background = randHue(); });
+    t.addEventListener('click', function () { t.style.background = randHue(); playClick(); });
     g.appendChild(t);
   }
 }
@@ -680,7 +740,7 @@ document.querySelectorAll('.fidget-tab').forEach(function (tab) {
 });
 /* ================= Sablier sensoriel ================= */
 const sctx = $('sandCanvas').getContext('2d');
-const SW = 300, SH = 250, TOP_Y = 12, NECK_Y = 125, BOT_Y = 238, CX = 150, NECK_HALF = 7, WIDE_HALF = 136, GRAV = 0.35, COL_W = 3;
+const SW = 300, SH = 250, TOP_Y = 12, NECK_Y = 125, BOT_Y = 238, CX = 150, NECK_HALF = 7, WIDE_HALF = 136, GRAV = 0.05, COL_W = 3;
 function wallAt(y) {
   if (y <= NECK_Y) { const t = (y - TOP_Y) / (NECK_Y - TOP_Y); const half = WIDE_HALF + (NECK_HALF - WIDE_HALF) * t; return [CX - half, CX + half]; }
   const t = (y - NECK_Y) / (BOT_Y - NECK_Y); const half = NECK_HALF + (WIDE_HALF - NECK_HALF) * t; return [CX - half, CX + half];
@@ -720,7 +780,7 @@ function spawnParticles() {
 function stepSand() {
   let below = 0;
   particles.forEach(function (p) {
-    p.vy = Math.min(p.vy + GRAV * p.g, 6); p.y += p.vy; p.x += p.vx + (p.jitter ? (Math.random() - 0.5) * p.jitter : 0); p.vx *= 0.99;
+    p.vy = Math.min(p.vy + GRAV * p.g, 1.2); p.y += p.vy; p.x += p.vx + (p.jitter ? (Math.random() - 0.5) * p.jitter : 0); p.vx *= 0.99;
     if (p.kind === 'coin') p.rot += p.vx * 0.25;
     let w = wallAt(p.y); let l = w[0], r = w[1];
     if (r - l < 2 * p.r) { l = CX - NECK_HALF; r = CX + NECK_HALF; }
@@ -787,8 +847,9 @@ function sandLoop() {
   if (!$('fidgetSand').hidden) {
     const t = Date.now() / 1000;
     const frac = stepSand(); drawSand(t);
+    if (frac > 0.02 && frac <= 0.95 && !sandEmpty) sandNoiseStart(); else sandNoiseStop();
     if (!sandEmpty && frac > 0.95) { sandEmpty = true; $('sandState').textContent = '⏳ vide !'; showToast('⏳ Le sablier est vide !\n' + surpriseText()); setTimeout(flipSand, 1400); }
-  }
+  } else sandNoiseStop();
   requestAnimationFrame(sandLoop);
 }
 $('sandFlip').addEventListener('click', flipSand);
