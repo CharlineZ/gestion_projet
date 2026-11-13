@@ -109,6 +109,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   #sandCanvas { background:linear-gradient(180deg,#211d3a,#17142b 50%,#241a33); border-color:#453f6e; }
   .note { background:#3a3313; border-color:#6b5d1f; color:#e7d9a0; }
 }
+
+/* ---------- Types de sablier (émotions) ---------- */
+.sand-types { display:flex; flex-wrap:wrap; gap:.35rem; justify-content:center; margin:0 auto .35rem; max-width:300px; }
+.sand-type-btn { padding:.22rem .5rem; border-radius:.6rem; border:2px solid #ddd3f5; background:#fbfaff; font-size:1.05rem; cursor:pointer; box-shadow:none; transition:transform .12s, border-color .12s; }
+.sand-type-btn:hover { transform:scale(1.12); }
+.sand-type-btn.active { border-color:#7c3aed; background:#ede9fe; transform:scale(1.18); }
+@media (prefers-color-scheme:dark) {
+  .sand-type-btn { background:#17142b; border-color:#453f6e; }
+  .sand-type-btn.active { border-color:#a78bfa; background:#35305c; }
+}
 </style>
 </head>
 <body>
@@ -216,7 +226,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
         <div id="fidgetPalette" hidden><div id="paletteGrid" class="palette-grid"></div></div>
         <div id="fidgetSand" hidden>
           <canvas id="sandCanvas" width="300" height="250"></canvas>
-          <div id="sandLegend" class="sand-legend"></div>
+          <div id="sandTypes" class="sand-types"></div>
           <div class="fidget-foot"><span id="sandState">⏳ en cours…</span><button id="sandFlip" type="button">↺ Retourner</button></div>
         </div>
       </div>
@@ -747,36 +757,57 @@ function wallAt(y) {
 }
 function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
 const GLITTER_COLORS = ['#fde047', '#f9a8d4', '#e9d5ff', '#ffffff', '#fca5a5', '#a5f3fc'];
-const MATERIALS = [
-  { label: 'Joie', emoji: '🟡', color: '#facc15', kind: 'dot', g: 1.0, r: 4, n: 55 },
-  { label: 'Colère', emoji: '🔴', color: '#ef4444', kind: 'dot', g: 1.35, r: 2.6, n: 55 },
-  { label: 'Tristesse', emoji: '🔵', color: '#3b82f6', kind: 'dot', g: 0.55, r: 4.6, n: 45 },
-  { label: 'Peur', emoji: '🟣', color: '#a855f7', kind: 'dot', g: 0.8, r: 3.4, n: 45, jitter: true },
-  { label: 'Calme', emoji: '🟢', color: '#22c55e', kind: 'dot', g: 0.4, r: 5, n: 35 },
-  { label: 'Paillettes', emoji: '✨', kind: 'glitter', g: 0.9, r: 2.2, n: 40 },
-  { label: 'Bulles', emoji: '🫧', color: '#7dd3fc', kind: 'bubble', g: 0.22, r: 5, n: 22, wobble: true },
+const ALL_MATERIALS = [
+  { label: 'Joie', emoji: '🟡', color: '#facc15', kind: 'dot', g: 1.0, r: 3.6, n: 45 },
+  { label: 'Colère', emoji: '🔴', color: '#ef4444', kind: 'dot', g: 1.35, r: 2.8, n: 45 },
+  { label: 'Tristesse', emoji: '🔵', color: '#3b82f6', kind: 'dot', g: 0.55, r: 4.8, n: 35 },
+  { label: 'Peur', emoji: '🟣', color: '#a855f7', kind: 'dot', g: 0.8, r: 3.6, n: 35, jitter: true },
+  { label: 'Calme', emoji: '🟢', color: '#22c55e', kind: 'dot', g: 0.4, r: 4.8, n: 28 },
+  { label: 'Paillettes', emoji: '✨', kind: 'glitter', g: 0.9, r: 2.4, n: 45 },
+  { label: 'Bulles', emoji: '🫧', color: '#7dd3fc', kind: 'bubble', g: 0.22, r: 5, n: 25 },
   { label: 'Slime', emoji: '🫠', color: '#86efac', kind: 'slime', g: 0.3, r: 6, n: 18 },
-  { label: 'Pièces', emoji: '🪙', color: '#fbbf24', kind: 'coin', g: 1.15, r: 3.5, n: 26 },
+  { label: 'Pièces', emoji: '🪙', color: '#fbbf24', kind: 'coin', g: 1.15, r: 3.6, n: 30 },
 ];
+// Un type de sablier = une émotion (sa texture, sa couleur, sa gravité). "mix" = toutes les matières.
+const HOURGLASSES = [
+  { id: 'joie', label: 'Joie', emoji: '🟡', kind: 'glitter', g: 0.9, r: 3, n: 190 },
+  { id: 'colere', label: 'Colère', emoji: '🔴', kind: 'dot', color: '#ef4444', g: 1.35, r: 3.2, n: 200 },
+  { id: 'tristesse', label: 'Tristesse', emoji: '🔵', kind: 'dot', color: '#3b82f6', g: 0.55, r: 5.5, n: 100 },
+  { id: 'peur', label: 'Peur', emoji: '🟣', kind: 'bubble', color: '#a855f7', g: 0.22, r: 6, n: 80, wobble: true },
+  { id: 'calme', label: 'Calme', emoji: '🟢', kind: 'slime', color: '#22c55e', g: 0.3, r: 6, n: 70 },
+  { id: 'mix', label: 'Mix', emoji: '🌈', mix: true },
+];
+let currentSand = 'joie';
+
 let particles = [];
 const heightmap = new Float32Array(Math.ceil(SW / COL_W));
 let sandEmpty = false;
 function spawnParticles() {
-  particles = []; heightmap.fill(0);
-  MATERIALS.forEach(function (m) {
+  particles = [];
+  heightmap.fill(0);
+  const h = HOURGLASSES.find(function (x) { return x.id === currentSand; }) || HOURGLASSES[0];
+  const mats = h.mix ? ALL_MATERIALS : [h];
+  for (const m of mats) {
     for (let i = 0; i < m.n; i++) {
-      const y = TOP_Y + 6 + Math.random() * (NECK_Y - TOP_Y - 34);
+      const y = TOP_Y + 4 + Math.random() * (NECK_Y - TOP_Y - 20);
       const w = wallAt(y);
       particles.push({
-        x: w[0] + m.r + Math.random() * Math.max(1, w[1] - w[0] - 2 * m.r), y: y,
-        vx: (Math.random() - 0.5) * 0.6, vy: 0, r: m.r,
+        x: w[0] + m.r + Math.random() * Math.max(1, w[1] - w[0] - 2 * m.r),
+        y: y,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: 0,
+        r: m.r,
         color: m.kind === 'glitter' ? GLITTER_COLORS[Math.floor(Math.random() * GLITTER_COLORS.length)] : m.color,
-        g: m.g, kind: m.kind, jitter: m.jitter ? 0.6 : m.wobble ? 0.9 : 0,
-        phase: Math.random() * Math.PI * 2, rot: Math.random() * Math.PI,
+        g: m.g,
+        kind: m.kind,
+        jitter: m.jitter ? 0.6 : m.wobble ? 0.9 : 0,
+        phase: Math.random() * Math.PI * 2,
+        rot: Math.random() * Math.PI,
       });
     }
-  });
+  }
 }
+
 function stepSand() {
   let below = 0;
   particles.forEach(function (p) {
@@ -840,9 +871,12 @@ function drawSand(t) {
   particles.forEach(function (p) { drawParticle(p, t); });
 }
 function flipSand() {
-  spawnParticles(); sandEmpty = false; $('sandState').textContent = '⏳ en cours…';
+  spawnParticles(); sandEmpty = false;
+  const h = HOURGLASSES.find(function (x) { return x.id === currentSand; }) || HOURGLASSES[0];
+  $('sandState').textContent = '⏳ ' + h.emoji + ' ' + h.label;
   const c = $('sandCanvas'); c.classList.remove('flip'); void c.offsetWidth; c.classList.add('flip');
 }
+
 function sandLoop() {
   if (!$('fidgetSand').hidden) {
     const t = Date.now() / 1000;
@@ -854,12 +888,24 @@ function sandLoop() {
 }
 $('sandFlip').addEventListener('click', flipSand);
 $('sandCanvas').addEventListener('click', flipSand);
-MATERIALS.forEach(function (m) {
-  const item = document.createElement('span'); item.className = 'sand-legend-item';
-  const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = m.color || GLITTER_COLORS[0];
-  item.appendChild(dot); item.appendChild(document.createTextNode(m.emoji + ' ' + m.label));
-  $('sandLegend').appendChild(item);
-});
+const sandTypes = $('sandTypes');
+if (sandTypes) {
+  for (const h of HOURGLASSES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sand-type-btn' + (h.id === currentSand ? ' active' : '');
+    b.textContent = h.emoji;
+    b.title = 'Sablier ' + h.label;
+    b.addEventListener('click', function () {
+      currentSand = h.id;
+      for (const x of sandTypes.children) x.classList.remove('active');
+      b.classList.add('active');
+      flipSand();
+    });
+    sandTypes.appendChild(b);
+  }
+}
+
 
 /* ================= Init ================= */
 buildBubbles(); buildPalette(); spawnParticles(); requestAnimationFrame(sandLoop);
