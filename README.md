@@ -75,6 +75,19 @@ Puis ouvrir <http://localhost:3000>.
     haut, 🪙 pièces qui tournent ; tout se mélange dans le col ; clic ou ↺ pour
     retourner, auto-retournement + toast surprise quand il est vide).
 
+## Version autonome sans installation (fichier unique)
+
+`public/standalone.html` est une version **100 % autonome** : un seul fichier HTML
+que tu ouvres en double-cliquant (aucune installation, fonctionne même hors ligne,
+données dans le `localStorage` du navigateur). Elle reprend tout le suivi local :
+projets, tâches, jalons/sous-jalons (auto-validation), retards, toasts + surprises,
+timer, fidgets (bulles, palette, sablier sensoriel), export/import JSON, et import
+Word via copier-coller du texte (extraction de dates locale, sans IA — mammoth via
+CDN si en ligne pour lire directement le `.docx`).
+Les fonctions IA (extraction Word intelligente, conseils de décalage, chat) restent
+disponibles dans la version serveur (`npm run dev`) car la clé API ne doit jamais
+être envoyée au navigateur.
+
 ## Vérification du typage
 
 ```bash
