@@ -84,9 +84,12 @@ projets, tâches, jalons/sous-jalons (auto-validation), retards, toasts + surpri
 timer, fidgets (bulles, palette, sablier sensoriel), export/import JSON, et import
 Word via copier-coller du texte (extraction de dates locale, sans IA — mammoth via
 CDN si en ligne pour lire directement le `.docx`).
-Les fonctions IA (extraction Word intelligente, conseils de décalage, chat) restent
+Les fonctions IA cloud (extraction Word intelligente, conseils, chat Mistral) restent
 disponibles dans la version serveur (`npm run dev`) car la clé API ne doit jamais
-être envoyée au navigateur.
+être envoyée au navigateur. **Nouveau** : le panneau « 🤖 IA locale » embarque un petit
+LLM dans le navigateur (Transformers.js + WebGPU/WASM, modèle SmolLM2-360M ~250 Mo
+téléchargé une seule fois puis en cache, ensuite 100 % hors ligne) : chat + conseils
+de décalage avec application en un clic — aucune clé, aucune donnée ne quitte le PC.
 
 ## Vérification du typage
 

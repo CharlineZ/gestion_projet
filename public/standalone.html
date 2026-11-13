@@ -168,6 +168,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
         <p id="profileMsg" class="msg"></p>
       </div>
     </details>
+    <details class="panel">
+      <summary>🤖 IA locale (LLM dans le navigateur, sans clé)</summary>
+      <div class="panel-body">
+        <p class="note">LLM embarqué (Transformers.js, ~250 Mo téléchargés <b>une seule fois</b> puis en cache, puis 100 % hors ligne). Aucune donnée ne quitte ton PC — aucune clé API. Chat + conseils de décalage. Premier chargement un peu long.</p>
+        <p class="msg" id="aiStatus">Non chargé.</p>
+        <div id="aiMessages" style="max-height:180px;min-height:60px;overflow-y:auto;display:flex;flex-direction:column;gap:.35rem;padding:.4rem;background:#f5f3ff;border-radius:.7rem"></div>
+        <form id="aiForm" style="display:flex;gap:.4rem">
+          <input id="aiInput" placeholder="Pose une question sur le projet…" autocomplete="off" style="flex:1;padding:.45rem .6rem;border:2px solid #ddd3f5;border-radius:.6rem;font-size:.9rem">
+          <button type="submit">Envoyer</button>
+        </form>
+        <button id="aiAdviceBtn" type="button">🧠 Analyser les retards (conseils + décalages)</button>
+        <div id="aiAdvicePanel" hidden>
+          <p id="aiAdviceText" style="font-size:.88rem;white-space:pre-line"></p>
+          <div id="aiApplyBox" hidden>
+            <ul id="aiDecalagesList" style="font-size:.85rem;padding-left:1.2rem"></ul>
+            <button id="aiApplyBtn" type="button">✅ Appliquer ces décalages</button>
+          </div>
+        </div>
+      </div>
+    </details>
     <details class="panel" open>
       <summary>⏱️ Timer focus</summary>
       <div class="panel-body">
@@ -784,7 +804,150 @@ MATERIALS.forEach(function (m) {
 buildBubbles(); buildPalette(); spawnParticles(); requestAnimationFrame(sandLoop);
 loadProfileUI(); render();
 setInterval(function () { if (currentSlug) render(); }, 3000);
-</script>
+/* ================= IA locale (LLM dans le navigateur, sans clé ni serveur) ================= */
+/* Modèle léger quantifié, téléchargé une fois puis en cache (IndexedDB).
+   Nécessite un navigateur récent (WebGPU ou WASM). Aucune donnée ne sort du PC. */
+const AI_MODEL = 'Xenova/SmolLM2-360M-Instruct';
+let localPipe = null;
+let localPipeLoading = null;
+const aiChatHistory = [];
 
+function aiStatus(text, isErr) {
+  const el = $('aiStatus'); el.textContent = text; el.className = 'msg' + (isErr ? ' error' : '');
+}
+async function getLocalPipe() {
+  if (localPipe) return localPipe;
+  if (localPipeLoading) return localPipeLoading;
+  localPipeLoading = (async () => {
+    aiStatus('Chargement du modèle local ' + AI_MODEL + ' (~250 Mo, une seule fois)…');
+    const mod = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6');
+    mod.env.allowLocalModels = false;
+    const pipe = await mod.pipeline('text-generation', AI_MODEL, { dtype: 'q8' });
+    localPipe = pipe;
+    aiStatus('✅ IA locale prête (100 % hors ligne ensuite). Modèle : ' + AI_MODEL);
+    return pipe;
+  })();
+  try { return await localPipeLoading; }
+  catch (e) {
+    localPipeLoading = null;
+    aiStatus('IA locale indisponible (' + (e && e.message ? e.message : e) + '). Utilise l\u2019extraction locale ou la version serveur.', true);
+    throw e;
+  }
+}
+
+function aiExtractJson(text) {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  try { return JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+}
+
+async function aiGenerate(systemPrompt, userPrompt, maxTokens) {
+  const pipe = await getLocalPipe();
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+  const out = await pipe(messages, { max_new_tokens: maxTokens || 500, temperature: 0.3, top_p: 0.9 });
+  let text = out && out[0] && out[0].generated_text;
+  if (Array.isArray(text)) text = text.length && text[text.length - 1].content || '';
+  if (typeof text === 'string' && text.indexOf(userPrompt) !== -1) text = text.slice(text.indexOf(userPrompt) + userPrompt.length);
+  return String(text || '').trim();
+}
+
+function addAiMsg(role, text) {
+  const div = document.createElement('div');
+  div.style.cssText = role === 'user'
+    ? 'align-self:flex-end;background:linear-gradient(90deg,#6366f1,#8b5cf6);color:#fff;padding:.4rem .65rem;border-radius:.8rem .8rem .2rem .8rem;max-width:85%;white-space:pre-wrap;font-size:.9rem'
+    : 'align-self:flex-start;background:#e4e4e7;padding:.4rem .65rem;border-radius:.8rem .8rem .8rem .2rem;max-width:85%;white-space:pre-wrap;font-size:.9rem';
+  div.textContent = text;
+  const box = $('aiMessages'); box.appendChild(div); box.scrollTop = box.scrollHeight;
+}
+
+$('aiForm').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  const input = $('aiInput');
+  const content = input.value.trim();
+  if (!content) return;
+  input.value = '';
+  addAiMsg('user', content);
+  aiChatHistory.push({ role: 'user', content: content });
+  addAiMsg('assistant', '…');
+  const box = $('aiMessages');
+  const pending = box.lastChild;
+  try {
+    const p = project();
+    const ctx = p ? 'Contexte projet « ' + p.name + ' » (date du jour ' + todayISO() + ') : ' + JSON.stringify(viewOf(p)) : '';
+    const sys = 'Tu es un coach de gestion de projet concis et bienveillant, en français. ' + (ctx ? 'Réponds en t\u2019appuyant sur ce contexte quand c\u2019est pertinent. ' : '') + 'Pas de markdown lourd, des phrases courtes.';
+    const messages = [{ role: 'system', content: sys }, ...aiChatHistory];
+    const pipe = await getLocalPipe();
+    const out = await pipe(messages, { max_new_tokens: 350, temperature: 0.4, top_p: 0.9 });
+    let text = out && out[0] && out[0].generated_text;
+    if (Array.isArray(text)) text = (text.length && text[text.length - 1].content) || '';
+    pending.textContent = String(text || '…').trim();
+    aiChatHistory.push({ role: 'assistant', content: String(text || '') });
+  } catch (err) {
+    pending.textContent = 'Erreur IA locale : ' + (err && err.message ? err.message : err);
+  }
+});
+
+$('aiAdviceBtn').addEventListener('click', async function () {
+  const p = project();
+  if (!p) { aiStatus('Sélectionne un projet d\u2019abord.', true); return; }
+  const btn = $('aiAdviceBtn'); btn.disabled = true;
+  aiStatus('Analyse locale en cours…');
+  try {
+    const v = viewOf(p);
+    const sys = 'Tu es un coach de gestion de projet. On te donne l\u2019état d\u2019un projet (tâches, échéances, retards). Réponds UNIQUEMENT en JSON valide : {"resume":"...","conseils":["..."],"decalages":[{"taskId":"...","nouvelleDate":"AAAA-MM-JJ","raison":"..."}]}. Ne décale que des tâches non terminées, dates >= aujourd\u2019hui, taskId exact.';
+    const user = 'Date du jour : ' + v.today + '\nProfil : ' + JSON.stringify(state.profile) + '\nProjet : ' + JSON.stringify({ tasks: v.tasks, stats: v.stats });
+    const raw = await aiGenerate(sys, user, 600);
+    const data = aiExtractJson(raw);
+    const panel = $('aiAdvicePanel');
+    if (!data) {
+      panel.hidden = false;
+      $('aiAdviceText').textContent = 'Réponse non JSON, texte brut :\n' + raw;
+      $('aiApplyBox').hidden = true;
+      aiStatus('Analyse faite (texte brut).');
+      return;
+    }
+    panel.hidden = false;
+    $('aiAdviceText').textContent = (data.resume || '') + '\n' + (data.conseils || []).map(function (c) { return '• ' + c; }).join('\n');
+    const list = $('aiDecalagesList'); list.innerHTML = '';
+    const byId = {};
+    v.tasks.forEach(function (t) { byId[t.id] = t; });
+    (data.decalages || []).forEach(function (d) {
+      const t = byId[d.taskId];
+      if (!t || t.done || !isValidDate(d.nouvelleDate)) return;
+      const li = document.createElement('li');
+      li.textContent = t.title + ' : ' + (t.due || 'sans date') + ' → ' + d.nouvelleDate + ' — ' + d.raison;
+      list.appendChild(li);
+    });
+    window.__aiDecalages = (data.decalages || []).filter(function (d) { const t = byId[d.taskId]; return t && !t.done && isValidDate(d.nouvelleDate); });
+    $('aiApplyBox').hidden = window.__aiDecalages.length === 0;
+    aiStatus('Analyse locale terminée.');
+  } catch (err) {
+    aiStatus('Erreur : ' + (err && err.message ? err.message : err), true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('aiApplyBtn').addEventListener('click', function () {
+  const p = project(); if (!p || !window.__aiDecalages) return;
+  let n = 0;
+  window.__aiDecalages.forEach(function (d) {
+    const t = p.tasks.find(function (x) { return x.id === d.taskId; });
+    if (!t || t.done) return;
+    const old = t.due;
+    t.due = d.nouvelleDate;
+    addHistory(p, 'décalage (IA locale)', t.title + ' : ' + (old || 'sans date') + ' → ' + d.nouvelleDate + ' (' + d.raison + ')');
+    n++;
+  });
+  saveState(state); render();
+  $('aiAdvicePanel').hidden = true;
+  window.__aiDecalages = null;
+  showToast('📅 ' + n + ' échéance(s) décalée(s) par l\u2019IA locale');
+});
+</script>
 </body>
 </html>
